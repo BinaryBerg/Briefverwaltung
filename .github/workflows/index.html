@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>📬 Brief-Dashboard – FINAL ZIP EXPORT</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+</head>
+<body class="p-6 bg-gray-100">
+  <h1 class="text-2xl font-bold mb-4">📬 Brief-Dashboard – lokal speicherbar & ZIP-Export-fähig</h1>
+
+  <div class="bg-white p-4 rounded shadow mb-6">
+    <h2 class="text-lg font-semibold mb-2">ℹ️ Hinweis zur Nutzung</h2>
+    <p class="text-sm mb-2">Dieses Dashboard speichert deine Briefeinträge im Browser (localStorage). Du kannst alle Daten inklusive Anhang als ZIP exportieren.</p>
+    <p class="text-sm mb-2">💡 <strong>Empfohlen:</strong> Sichere regelmäßig per Export – alle Daten + Anhänge werden portabel gesichert.</p>
+    <p class="text-sm">🛠️ Erstellt von <strong>TimInTech</strong> – <a href="https://github.com/TimInTech" class="text-blue-600 underline">GitHub ansehen</a></p>
+  </div>
+
+  <form id="briefForm" class="space-y-4 mb-6">
+    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+      <input type="date" id="datum" class="p-2 border rounded" required>
+      <input type="text" id="absender" placeholder="Absender" class="p-2 border rounded" required>
+      <input type="text" id="betreff" placeholder="Betreff" class="p-2 border rounded" required>
+      <input type="number" step="0.01" id="betrag" placeholder="Betrag (€)" class="p-2 border rounded">
+      <input type="date" id="frist" class="p-2 border rounded">
+      <select id="kategorie" class="p-2 border rounded">
+        <option>🟥 Gericht / Inkasso</option>
+        <option>🟧 Versorger / Banken</option>
+        <option>🟨 Behörden / Krankenkassen</option>
+        <option>🟩 Werbung / Privat</option>
+      </select>
+      <select id="status" class="p-2 border rounded">
+        <option>🔴 offen</option>
+        <option>🟡 in Bearbeitung</option>
+        <option>🟢 erledigt</option>
+      </select>
+      <input type="file" id="anhang" accept=".pdf,.jpg,.jpeg,.png" class="col-span-2">
+    </div>
+    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded">📥 Eintrag speichern</button>
+  </form>
+
+  <button onclick="exportiereZIP()" class="bg-gray-800 text-white px-4 py-2 mb-6 rounded">🗜️ Alles exportieren als ZIP</button>
+
+  <table class="bg-white w-full text-sm" id="briefTable">
+    <thead>
+      <tr class="bg-gray-200">
+        <th>Datum</th><th>Absender</th><th>Betreff</th><th>Betrag</th><th>Frist</th><th>Kategorie</th><th>Status</th><th>Anhang</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    let eintraege = JSON.parse(localStorage.getItem("briefEintraegeFinal")) || [];
+    const form = document.getElementById("briefForm");
+    const tableBody = document.querySelector("#briefTable tbody");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const datei = document.getElementById("anhang").files[0];
+      let dateianhang = null;
+
+      if (datei) {
+        const base64 = await toBase64(datei);
+        dateianhang = {
+          name: datei.name,
+          type: datei.type,
+          data: base64.split(',')[1]
+        };
+      }
+
+      const neuerEintrag = {
+        datum: form.datum.value,
+        absender: form.absender.value,
+        betreff: form.betreff.value,
+        betrag: form.betrag.value || "-",
+        frist: form.frist.value || "-",
+        kategorie: form.kategorie.value,
+        status: form.status.value,
+        dateianhang: dateianhang
+      };
+
+      eintraege.push(neuerEintrag);
+      localStorage.setItem("briefEintraegeFinal", JSON.stringify(eintraege));
+      renderTabelle();
+      form.reset();
+    });
+
+    function renderTabelle() {
+      tableBody.innerHTML = "";
+      eintraege.forEach((eintrag) => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${eintrag.datum}</td>
+          <td>${eintrag.absender}</td>
+          <td>${eintrag.betreff}</td>
+          <td>${eintrag.betrag}</td>
+          <td>${eintrag.frist}</td>
+          <td>${eintrag.kategorie}</td>
+          <td>${eintrag.status}</td>
+          <td>${eintrag.dateianhang ? `<a href="data:${eintrag.dateianhang.type};base64,${eintrag.dateianhang.data}" download="${eintrag.dateianhang.name}" class="text-blue-600 underline">Download</a>` : '-'}</td>
+        `;
+        tableBody.appendChild(row);
+      });
+    }
+
+    function toBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = error => reject(error);
+      });
+    }
+
+    async function exportiereZIP() {
+      const zip = new JSZip();
+      const daten = JSON.parse(localStorage.getItem("briefEintraegeFinal")) || [];
+
+      const exportDaten = daten.map((e) => {
+        if (e.dateianhang) {
+          zip.file("attachments/" + e.dateianhang.name, e.dateianhang.data, {base64: true});
+        }
+        return Object.assign({}, e, { dateianhang: e.dateianhang ? e.dateianhang.name : null });
+      });
+
+      zip.file("briefdaten.json", JSON.stringify(exportDaten, null, 2));
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `brief_export_${new Date().toISOString().split('T')[0]}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    window.addEventListener("load", renderTabelle);
+  </script>
+</body>
+</html>
